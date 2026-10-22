@@ -6,7 +6,7 @@ import csv
 import json
 import random
 import mujoco
-from array import array  # [AÑADIDO] buffers preasignados para las métricas
+from array import array #for the csv
 
 
 def load_config(config_file="config.json"):    
@@ -23,7 +23,7 @@ def physics_process(shared_state, control_force, running_flag, render_flag, cont
     """
     viewer_hz = 60.0
 
-    # [AÑADIDO] Fase 2: con --rt la física pasa a SCHED_FIFO con prioridad MENOR que el control
+    #Set the priority of the physics at 50 (for the second fase)
     if use_rt:
         try:
             os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(50))
@@ -116,7 +116,7 @@ def control_process(shared_state, control_force, running_flag, control_hz, confi
     Thread responsible for controlling the pendulum.
     """
 
-    # [AÑADIDO] Fase 2: el hilo de control es el crítico -> SCHED_FIFO con prioridad alta
+    #Set the priority of the control at 80 (for the second fase)
     if use_rt:
         try:
             os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(80))
@@ -138,7 +138,7 @@ def control_process(shared_state, control_force, running_flag, control_hz, confi
     
     print(f"[Control] Starting control loop: {total_cycles} cycles ({duration_s}s at {target_hz}Hz).")
 
-    # [AÑADIDO] Fase 1: memoria preasignada ANTES del bucle (sin I/O dentro del bucle)
+    # Arrays inicialiced with memory before the start to avoid interference (phase 1)
     n_max = int(total_cycles) + 100
     lat_buf = array('q', [0]) * n_max      # latencia (ns)
     ts_buf = array('d', [0.0]) * n_max     # epoch (s)
@@ -147,7 +147,7 @@ def control_process(shared_state, control_force, running_flag, control_hz, confi
     n_rec = 0
     
     start_time_ns = time.perf_counter_ns()
-    epoch0_s = time.time()  # [AÑADIDO] referencia para calcular el epoch de cada ciclo sin llamar a time.time()
+    epoch0_s = time.time()  # to calculate the epoch without needing to call it all the time
     expected_time_ns = start_time_ns + period_ns
     last_cycle_time = start_time_ns
     
@@ -187,7 +187,7 @@ def control_process(shared_state, control_force, running_flag, control_hz, confi
         theta = shared_state[2]         # Pendulum angle (theta)
         theta_dot = shared_state[3]     # Angular velocity (theta_dot)
 
-        # [AÑADIDO] Registro en memoria: latencia = instante real - instante esperado
+        # modifiying the data in the memory latencie = real instance - expected instance
         if n_rec < n_max:
             lat_buf[n_rec] = actual_time_ns - expected_time_ns
             ts_buf[n_rec] = epoch0_s + (actual_time_ns - start_time_ns) / 1e9
@@ -211,8 +211,8 @@ def control_process(shared_state, control_force, running_flag, control_hz, confi
         # Calculate the exact next wake-up time
         expected_time_ns += period_ns
 
-    # [AÑADIDO] Fase 1: volcado a CSV una vez terminado el experimento (fuera del bucle)
-    csv_file = config_data.get("csv_file", "latencies.csv")
+    # writing in the csv the data collected, it goes to the csv outside of the while (phase 1)
+    csv_file = config_data.get("csv_file", "latencies.csv") #modifed if need to change the name of the csv
     with open(csv_file, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["number", "epoch", "latency(ns)", "angle", "angular_speed"])
@@ -232,11 +232,11 @@ if __name__ == '__main__':
     parser.add_argument("--hz", type=int, help="Control cycle frequency in Hz (overrides config.json)")
     parser.add_argument("--rt", action="store_true", help="Activate real-time policies (requires sudo)")
     parser.add_argument("--perturb", action="store_true", help="Activate periodic perturbation")
-    parser.add_argument("--csv", type=str, default="latencies.csv", help="Output CSV file (e.g. Fase1_idle.csv)")  # [AÑADIDO]
+    parser.add_argument("--csv", type=str, default="latencies.csv", help="Output CSV file (e.g. Fase1_idle.csv)") #modified if need to change the name of the csv
     args = parser.parse_args()
     
     config_data = load_config()
-    config_data["csv_file"] = args.csv  # [AÑADIDO] se pasa al proceso de control vía config_data
+    config_data["csv_file"] = args.csv
     target_hz = args.hz if args.hz else config_data["control_hz"]
         
     
